@@ -84,7 +84,7 @@ class Stock:
 
     def get_data_for_ML(self):
         y = pd.DataFrame(
-            (transaction.profitablitity for transaction in self.transactions)
+            (transaction.profitability for transaction in self.transactions)
         )
         X = pd.DataFrame((
             list(transaction.history.open / transaction.history.open.iloc[-1])
@@ -95,12 +95,18 @@ class Stock:
         ))
         return X, y
 
+    @property
+    def signal_iterator(self):
+        for i in range(self.index + self.stock_df.index.step, self.stock_df.index.stop, self.stock_df.index.step):
+            yield Signal(self.get_row(i))
+
 
 class Signal:
     """
     Represents single row of Stock data
     """
     index = property()
+    date = property()
 
     def __init__(self, row):
         self.row = row
@@ -108,6 +114,10 @@ class Signal:
     @index.getter
     def index(self):
         return self.row.index[0]
+
+    @date.getter
+    def date(self):
+        return self.row.open_time
 
     def get_price(self, column='open'):
         return float(self.row[column])
@@ -132,6 +142,8 @@ class Transaction:
     def __init__(self, history, signal_begin, signal_end,
                  money, commission):
         self.history = history
+        self.signal_begin = signal_begin
+        self.signal_end = signal_end
         self.rate = commission * signal_end.get_price() / signal_begin.get_price()
         self.profitability = self.rate > 1
 
@@ -142,18 +154,9 @@ class Transaction:
 @timeit
 def bollinger(*args, **kwargs):
     stock = Stock(*args, **kwargs)
-    stock_iterator = iter(stock)
-    while True:
-        try:
-            signal_begin = next(stock_iterator)
-        except StopIteration:
-            return stock
+    for signal_begin in stock:
         if signal_begin.is_buy_start():
-            while True:
-                try:
-                    signal_end = next(stock_iterator)
-                except StopIteration:
-                    return stock
+            for signal_end in stock.signal_iterator:
                 if signal_end.is_buy_stop():
                     stock.make_transaction(signal_begin, signal_end)
                     break
