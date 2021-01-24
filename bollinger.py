@@ -76,19 +76,24 @@ class Stock:
         transaction = Transaction(history, signal_begin, signal_end,
                                   self.money, self.commission)
         self.transactions.append(transaction)
-        self.money = transaction.money_output
+        self.money *= transaction.rate
 
     def get_history(self, signal_begin):
         return self.stock_df.loc[signal_begin.index - self.n + 1:
                                  signal_begin.index]
 
     def get_data_for_ML(self):
-        return pd.DataFrame(columns=['Result'] + list(range(self.n)),
-                            data=([transaction.profitability]
-                                  + list(transaction.history.open /
-                                         transaction.history.open.iloc[-1])
-                                  for transaction in self.transactions)
-                            )
+        y = pd.DataFrame(
+            (transaction.profitablitity for transaction in self.transactions)
+        )
+        X = pd.DataFrame((
+            list(transaction.history.open / transaction.history.open.iloc[-1])
+            + list(transaction.history.avg / transaction.history.open.iloc[-1])
+            + list(transaction.history.lower /
+                   transaction.history.open.iloc[-1])
+            for transaction in self.transactions
+        ))
+        return X, y
 
 
 class Signal:
@@ -125,16 +130,10 @@ class Transaction:
     """
 
     def __init__(self, history, signal_begin, signal_end,
-                 money_input, commission):
+                 money, commission):
         self.history = history
-        self.signal_begin = signal_begin
-        self.signal_end = signal_end
-        self.price_begin = signal_begin.get_price()
-        self.price_end = signal_end.get_price()
-        self.money_input = money_input
-        self.money_output = commission * money_input * \
-            self.price_end / self.price_begin
-        self.profitability = self.money_input < self.money_output
+        self.rate = commission * signal_end.get_price() / signal_begin.get_price()
+        self.profitability = self.rate > 1
 
     # def __repr__(self):
     #     return f'{self.profitability}'
